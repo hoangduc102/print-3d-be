@@ -27,6 +27,9 @@ export default () => ({
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3001'],
+    // Bỏ khoảng trắng và dấu "/" cuối để "https://a.com/" vẫn khớp origin "https://a.com"
+    origin: process.env.CORS_ORIGIN?.split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean) || ['http://localhost:3001'],
   },
 });

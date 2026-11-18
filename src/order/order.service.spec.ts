@@ -48,7 +48,8 @@ describe('OrderService', () => {
         },
       ]);
 
-      const order = await service.create(
+      // order.create được mock trả lại nguyên `data` đã gửi vào Prisma
+      const order: any = await service.create(
         {
           shippingAddress,
           items: [{ variantId: 'v1', quantity: 2, scale: 150, price: 1 }],
@@ -73,7 +74,8 @@ describe('OrderService', () => {
         },
       ]);
 
-      const order = await service.create(
+      // order.create được mock trả lại nguyên `data` đã gửi vào Prisma
+      const order: any = await service.create(
         {
           shippingAddress,
           items: [
