@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
@@ -189,15 +189,20 @@ export class AuthService {
       this.jwtService.signAsync(
         { ...payload, jti: randomUUID() },
         {
-          secret: this.configService.get<string>('jwt.secret'),
-          expiresIn: this.configService.get<string>('jwt.expiresIn'),
+          secret: this.configService.getOrThrow<string>('jwt.secret'),
+          expiresIn:
+            this.configService.getOrThrow<JwtSignOptions['expiresIn']>(
+              'jwt.expiresIn',
+            ),
         },
       ),
       this.jwtService.signAsync(
         { ...payload, jti: randomUUID() },
         {
-          secret: this.configService.get<string>('jwt.refreshSecret'),
-          expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
+          secret: this.configService.getOrThrow<string>('jwt.refreshSecret'),
+          expiresIn: this.configService.getOrThrow<JwtSignOptions['expiresIn']>(
+            'jwt.refreshExpiresIn',
+          ),
         },
       ),
     ]);

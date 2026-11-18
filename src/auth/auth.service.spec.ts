@@ -40,16 +40,18 @@ describe('AuthService', () => {
     signAsync: jest.fn(),
   };
 
+  const testConfig: Record<string, any> = {
+    'security.bcryptRounds': 10,
+    'jwt.secret': 'test-secret',
+    'jwt.expiresIn': '15m',
+    'jwt.refreshSecret': 'test-refresh-secret',
+    'jwt.refreshExpiresIn': '7d',
+  };
   const mockConfigService = {
-    get: jest.fn((key: string) => {
-      const config: Record<string, any> = {
-        'security.bcryptRounds': 10,
-        'jwt.secret': 'test-secret',
-        'jwt.expiresIn': '15m',
-        'jwt.refreshSecret': 'test-refresh-secret',
-        'jwt.refreshExpiresIn': '7d',
-      };
-      return config[key];
+    get: jest.fn((key: string) => testConfig[key]),
+    getOrThrow: jest.fn((key: string) => {
+      if (testConfig[key] === undefined) throw new Error(`Missing ${key}`);
+      return testConfig[key];
     }),
   };
 
