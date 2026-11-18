@@ -145,7 +145,7 @@ export class VariantsService {
     };
   }
 
-  async create(payload: CreateVariantPayload) {
+  async create(payload: CreateVariantPayload, user?: any) {
     const { productId, materialId, name, volume, stock } = payload;
 
     // Verify product exists
@@ -156,6 +156,11 @@ export class VariantsService {
 
     if (!product) {
       throw new NotFoundException(ERROR_MESSAGES.PRODUCT.NOT_FOUND);
+    }
+
+    // Chỉ admin hoặc chủ sản phẩm mới được thêm variant
+    if (user?.role !== UserRole.ADMIN && product.userId !== user?.sub) {
+      throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
     }
 
     // Verify material exists

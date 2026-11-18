@@ -9,9 +9,11 @@ import {
   Payment as PaymentModel,
   PaymentMethod,
   PaymentStatus,
+  Prisma,
   Shipment as ShipmentModel,
   ShipmentStatus,
 } from '@prisma/client';
+import { APP_CONSTANTS } from '../common/constants/app.constants';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -29,12 +31,17 @@ export class OrderService {
         variant: {
           select: {
             id: true,
-            sku: true,
+            name: true,
             material: {
               select: { id: true, name: true, color: true },
             },
             product: {
-              select: { id: true, name: true, basePrice: true },
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                images: { select: { url: true }, take: 1 },
+              },
             },
           },
         },
@@ -49,33 +56,14 @@ export class OrderService {
     const { shippingAddress, items } = dto;
 
     return this.prisma.$transaction(async (tx) => {
-      const variants = await tx.variant.findMany({
-        where: {
-          id: { in: items.map((i) => i.variantId) },
-        },
-        include: {
-          product: true,
-        },
-      });
+      // 1️⃣ Server tự tính giá từng item (không tin giá client gửi lên)
+      const orderItemsData = await this.priceItems(tx, items);
 
-      if (variants.length !== items.length) {
-        throw new NotFoundException('Một hoặc nhiều variant không tồn tại');
-      }
-
-      // 2️⃣ Map price + tính totalAmount
-      let totalAmount = new Decimal(0);
-
-      const orderItemsData = items.map((item) => {
-        const variant = variants.find((v) => v.id === item.variantId)!;
-        const price = new Decimal(variant.product.basePrice);
-        totalAmount = totalAmount.add(price.mul(item.quantity));
-
-        return {
-          variantId: item.variantId,
-          quantity: item.quantity,
-          price, // Decimal
-        };
-      });
+      // 2️⃣ Tổng tiền = Σ đơn giá × số lượng + phí vận chuyển
+      const totalAmount = orderItemsData.reduce(
+        (sum, item) => sum.add(item.price.mul(item.quantity)),
+        new Decimal(APP_CONSTANTS.ORDER.SHIPPING_FEE),
+      );
 
       // 3️⃣ TẠO ADDRESS (AUTO FILL)
       const address = await tx.address.create({
@@ -98,7 +86,7 @@ export class OrderService {
           userId,
           addressId: address.id,
           status: 'PENDING',
-          totalAmount, // ✅ FIX LỖI TS
+          totalAmount,
           items: {
             create: orderItemsData,
           },
@@ -161,6 +149,19 @@ export class OrderService {
 
     this.assertOwnership(existing.userId, currentUser);
 
+    // Khách hàng chỉ được huỷ đơn của mình khi đơn còn PENDING
+    if (!this.isAdmin(currentUser)) {
+      const onlyCancelling =
+        dto.status === OrderStatus.CANCELLED &&
+        Object.keys(dto).every((key) => key === 'status');
+      if (!onlyCancelling) {
+        throw new ForbiddenException('Ban chi co the huy don hang');
+      }
+      if (existing.status !== OrderStatus.PENDING) {
+        throw new BadRequestException('Chi co the huy don hang dang cho xu ly');
+      }
+    }
+
     if (dto.items && dto.items.length === 0) {
       throw new BadRequestException('Danh sach san pham khong hop le');
     }
@@ -169,12 +170,17 @@ export class OrderService {
       await this.ensureAddressBelongsToUser(dto.addressId, existing.userId);
     }
 
-    const variants = dto.items ? await this.loadVariants(dto.items) : null;
+    const pricedItems = dto.items
+      ? await this.priceItems(this.prisma, dto.items)
+      : null;
 
     const totalAmount =
       dto.totalAmount ??
-      (dto.items && variants
-        ? this.calculateTotalFromVariants(dto.items, variants)
+      (pricedItems
+        ? pricedItems.reduce(
+            (sum, item) => sum + Number(item.price) * item.quantity,
+            0,
+          ) + APP_CONSTANTS.ORDER.SHIPPING_FEE
         : Number(existing.totalAmount));
 
     return this.prisma.$transaction(async (tx) => {
@@ -188,15 +194,7 @@ export class OrderService {
           addressId: dto.addressId ?? existing.addressId,
           status: dto.status ?? existing.status,
           totalAmount,
-          items: dto.items
-            ? {
-                create: dto.items.map((item) => ({
-                  variantId: item.variantId,
-                  quantity: item.quantity,
-                  price: variants![item.variantId].price,
-                })),
-              }
-            : undefined,
+          items: pricedItems ? { create: pricedItems } : undefined,
           payment: this.buildPaymentWrite(
             existing.payment,
             dto.payment,
@@ -217,16 +215,6 @@ export class OrderService {
       where: { id },
       include: this.orderInclude,
     });
-  }
-
-  private calculateTotalFromVariants(
-    items: OrderItemDto[],
-    variants: Record<string, { price: number; stock?: number | null }>,
-  ) {
-    return items.reduce(
-      (sum, item) => sum + item.quantity * variants[item.variantId].price,
-      0,
-    );
   }
 
   private toDate(value?: string) {
@@ -309,41 +297,55 @@ export class OrderService {
     }
   }
 
-  private async loadVariants(items: OrderItemDto[]) {
+  /**
+   * Tính đơn giá cho từng item phía server.
+   * Đơn giá = basePrice × material.priceFactor × scale / 100 (làm tròn tới đồng),
+   * khớp với `variant.price` mà GET /products/:id trả về cho FE.
+   */
+  private async priceItems(
+    client: Prisma.TransactionClient,
+    items: OrderItemDto[],
+  ) {
     const ids = [...new Set(items.map((i) => i.variantId))];
-    const variants = await this.prisma.variant.findMany({
+    const variants = await client.variant.findMany({
       where: { id: { in: ids } },
       select: {
         id: true,
-        stock: true,
         product: { select: { basePrice: true } },
+        material: { select: { priceFactor: true } },
       },
     });
 
+    // So với số id KHÔNG trùng: 1 variant có thể xuất hiện nhiều lần với scale khác nhau
     if (variants.length !== ids.length) {
-      throw new NotFoundException('Co bien the khong ton tai');
+      throw new NotFoundException('Một hoặc nhiều variant không tồn tại');
     }
 
-    const map: Record<string, { price: number; stock?: number | null }> = {};
-    variants.forEach((v) => {
-      map[v.id] = {
-        price: Number(v.product.basePrice),
-        stock: (v as any).stock,
+    const byId = new Map(variants.map((v) => [v.id, v]));
+    return items.map((item) => {
+      const variant = byId.get(item.variantId)!;
+      return {
+        variantId: item.variantId,
+        quantity: item.quantity,
+        price: this.unitPrice(
+          variant.product.basePrice,
+          variant.material.priceFactor,
+          item.scale ?? 100,
+        ),
       };
     });
+  }
 
-    for (const item of items) {
-      const variant = map[item.variantId];
-      if (
-        variant.stock !== undefined &&
-        variant.stock !== null &&
-        item.quantity > variant.stock
-      ) {
-        throw new BadRequestException('So luong vuot qua ton kho');
-      }
-    }
-
-    return map;
+  private unitPrice(
+    basePrice: Prisma.Decimal,
+    priceFactor: number | null,
+    scale: number,
+  ) {
+    return new Decimal(basePrice)
+      .mul(priceFactor ?? 1)
+      .mul(scale)
+      .div(100)
+      .toDecimalPlaces(0);
   }
 
   private assertOwnership(orderUserId: string, currentUser?: JwtPayload) {

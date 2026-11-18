@@ -67,8 +67,8 @@ export class VariantsController {
   @ApiResponse({ status: 201, description: 'Variant created successfully' })
   @ApiResponse({ status: 403, description: 'Permission denied' })
   @ApiResponse({ status: 404, description: 'Product or Material not found' })
-  async create(@Body() createVariantDto: CreateVariantDto) {
-    return this.variantsService.create(createVariantDto as any);
+  async create(@Req() req, @Body() createVariantDto: CreateVariantDto) {
+    return this.variantsService.create(createVariantDto as any, req.user);
   }
 
   @Patch(':id')

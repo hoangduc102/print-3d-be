@@ -1,8 +1,11 @@
-﻿import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNumber, IsUUID, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsInt, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 export class OrderItemDto {
-  @ApiProperty({ description: 'ID biến thể sản phẩm', example: '8331c08c-24c1-4185-b8b6-a6b91ac9c3c8' })
+  @ApiProperty({
+    description: 'ID biến thể sản phẩm',
+    example: '8331c08c-24c1-4185-b8b6-a6b91ac9c3c8',
+  })
   @IsUUID()
   variantId: string;
 
@@ -11,8 +14,24 @@ export class OrderItemDto {
   @Min(1)
   quantity: number;
 
-  @ApiProperty({ description: 'Đơn giá tại thời điểm đặt hàng', example: 35.5 })
+  @ApiPropertyOptional({
+    description: 'Tỉ lệ in (%) so với kích thước gốc, mặc định 100',
+    example: 100,
+    default: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(10)
+  @Max(500)
+  scale?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Đơn giá phía client (chỉ để tham khảo). Server luôn tự tính lại giá, không dùng giá trị này.',
+    example: 35000,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  price: number;
+  price?: number;
 }

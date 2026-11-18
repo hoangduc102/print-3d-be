@@ -464,9 +464,19 @@ export class ProductsService {
       throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
     }
 
-    await this.prisma.product.delete({
-      where: { id },
-    });
+    try {
+      await this.prisma.product.delete({
+        where: { id },
+      });
+    } catch (error) {
+      // P2003: variant của sản phẩm đã nằm trong đơn hàng (OrderItem onDelete: Restrict)
+      if ((error as { code?: string })?.code === 'P2003') {
+        throw new BadRequestException(
+          'Sản phẩm đã có trong đơn hàng nên không thể xoá.',
+        );
+      }
+      throw error;
+    }
 
     return { message: ERROR_MESSAGES.PRODUCT.DELETED_SUCCESS };
   }

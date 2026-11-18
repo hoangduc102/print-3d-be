@@ -23,6 +23,10 @@ export const APP_CONSTANTS = {
     CODE: 'VND',
     SYMBOL: '₫',
   },
+  ORDER: {
+    /** Phí vận chuyển cố định cho mỗi đơn (VND) — FE hiển thị cùng giá trị */
+    SHIPPING_FEE: 35000,
+  },
 };
 
 export const ERROR_MESSAGES = {

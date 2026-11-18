@@ -62,7 +62,7 @@ export class PaymentController {
       req.socket?.remoteAddress ||
       '127.0.0.1';
 
-    return this.paymentService.createVnPayUrl(id, ipAddr);
+    return this.paymentService.createVnPayUrl(id, ipAddr, user);
   }
 
   @Post()

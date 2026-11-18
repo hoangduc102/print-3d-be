@@ -17,7 +17,6 @@ import { UpdatePaymentDto } from './dto/update-payment.dto';
 import * as crypto from 'crypto';
 import dayjs from 'dayjs';
 import * as qs from 'qs';
-import { error } from 'console';
 
 @Injectable()
 export class PaymentService {
@@ -61,13 +60,20 @@ export class PaymentService {
       throw new BadRequestException('Don hang nay da co thong tin thanh toan');
     }
 
+    // Khách hàng không được tự đặt trạng thái / số tiền / mã giao dịch
+    const isAdmin = this.isAdmin(currentUser);
+
     return this.prisma.payment.create({
       data: {
         orderId: dto.orderId,
         method: dto.method,
-        status: dto.status ?? PaymentStatus.UNPAID,
-        amount: dto.amount ?? Number(order.totalAmount),
-        transactionId: dto.transactionId,
+        status: isAdmin
+          ? (dto.status ?? PaymentStatus.UNPAID)
+          : PaymentStatus.UNPAID,
+        amount: isAdmin
+          ? (dto.amount ?? Number(order.totalAmount))
+          : Number(order.totalAmount),
+        transactionId: isAdmin ? dto.transactionId : undefined,
       },
       include: this.defaultInclude,
     });
@@ -120,13 +126,16 @@ export class PaymentService {
     this.assertOrderOwnership(payment.order.userId, currentUser);
     this.ensureOrderAllowsPayment(payment.order.status);
 
+    // Khách hàng chỉ được đổi phương thức thanh toán
+    const isAdmin = this.isAdmin(currentUser);
+
     return this.prisma.payment.update({
       where: { id },
       data: {
         method: dto.method,
-        status: dto.status,
-        amount: dto.amount,
-        transactionId: dto.transactionId,
+        status: isAdmin ? dto.status : undefined,
+        amount: isAdmin ? dto.amount : undefined,
+        transactionId: isAdmin ? dto.transactionId : undefined,
       },
       include: this.defaultInclude,
     });
@@ -152,7 +161,11 @@ export class PaymentService {
      VNPAY - CREATE PAYMENT URL
      ====================================================== */
 
-  async createVnPayUrl(paymentId: string, ipAddr: string) {
+  async createVnPayUrl(
+    paymentId: string,
+    ipAddr: string,
+    currentUser: JwtPayload,
+  ) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: { order: true },
@@ -160,6 +173,13 @@ export class PaymentService {
 
     if (!payment || !payment.order) {
       throw new NotFoundException('Payment hoặc Order không tồn tại');
+    }
+
+    this.assertOrderOwnership(payment.order.userId, currentUser);
+    this.ensureOrderAllowsPayment(payment.order.status);
+
+    if (payment.status === PaymentStatus.PAID) {
+      throw new BadRequestException('Don hang nay da duoc thanh toan');
     }
 
     process.env.TZ = 'Asia/Ho_Chi_Minh';
@@ -172,7 +192,8 @@ export class PaymentService {
       vnp_TmnCode: process.env.VNP_TMN_CODE!,
       vnp_Amount: Math.round(amount * 100), // ✅ đảm bảo integer
       vnp_CurrCode: 'VND',
-      vnp_TxnRef: paymentId,
+      // VNPay yêu cầu TxnRef không trùng trong ngày → thêm timestamp để thanh toán lại được
+      vnp_TxnRef: this.buildTxnRef(paymentId),
       vnp_OrderInfo: `Thanh_toan_don_hang_${paymentId}`,
       vnp_OrderType: 'other',
       vnp_Locale: 'vn',
@@ -208,7 +229,7 @@ export class PaymentService {
       return { RspCode: '97', Message: 'Invalid signature' };
     }
 
-    const paymentId = query['vnp_TxnRef'];
+    const paymentId = this.parseTxnRef(query['vnp_TxnRef']);
     const responseCode = query['vnp_ResponseCode'];
     const amount = Number(query['vnp_Amount']);
 
@@ -266,14 +287,14 @@ export class PaymentService {
       throw new BadRequestException('Chu ky khong hop le');
     }
 
-    const paymentId = query['vnp_TxnRef'];
+    const paymentId = this.parseTxnRef(query['vnp_TxnRef']);
     const responseCode = query['vnp_ResponseCode'];
 
-    if (responseCode === '00') {
-      const payment = await this.prisma.payment.findUnique({
-        where: { id: paymentId },
-      });
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
 
+    if (responseCode === '00') {
       if (payment && payment.status !== PaymentStatus.PAID) {
         await this.prisma.$transaction([
           this.prisma.payment.update({
@@ -293,6 +314,7 @@ export class PaymentService {
 
     return {
       paymentId,
+      orderId: payment?.orderId ?? null,
       responseCode,
       success: responseCode === '00',
     };
@@ -301,6 +323,15 @@ export class PaymentService {
   /* ======================================================
      HELPERS
      ====================================================== */
+  /** TxnRef = `<paymentId>-<timestamp>`; paymentId là UUID 36 ký tự */
+  private buildTxnRef(paymentId: string) {
+    return `${paymentId}-${Date.now()}`;
+  }
+
+  private parseTxnRef(txnRef: unknown): string {
+    return typeof txnRef === 'string' ? txnRef.slice(0, 36) : '';
+  }
+
   private verifyVnPaySignature(query: any): boolean {
     const secureHash = query['vnp_SecureHash'];
     if (!secureHash) return false;
