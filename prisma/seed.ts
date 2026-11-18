@@ -11,37 +11,39 @@ async function main() {
   let admin = await prisma.user.findUnique({
     where: { email: adminEmail },
   });
-  if (!admin) {
-    const hash = await bcrypt.hash('Admin123!', 10);
+  const hash = await bcrypt.hash('Admin123!', 10);
 
-    admin = await prisma.user.create({
-      data: {
-        username: 'admin',
-        email: adminEmail,
-        passwordHash: hash,
-        role: UserRole.ADMIN,
-        isActive: true,
+  admin = await prisma.user.upsert({
+    where: { email: adminEmail },
+    update: {},
+    create: {
+      username: 'admin',
+      email: adminEmail,
+      passwordHash: hash,
+      role: UserRole.ADMIN,
+      isActive: true,
 
-        // 👇 TẠO ADDRESS CHUẨN THEO schema.prisma
-        addresses: {
-          create: {
-            recipient: 'Admin',
-            phone: '0900000000',
-            address1: '1 Admin Street',
-            address2: null,
-            city: 'Ho Chi Minh City',
-            state: 'Ho Chi Minh',
-            postal: '700000',
-            country: 'Vietnam',
-            isDefault: true,
-          },
+      // 👇 TẠO ADDRESS CHUẨN THEO schema.prisma
+      addresses: {
+        create: {
+          recipient: 'Admin',
+          phone: '0900000000',
+          address1: '1 Admin Street',
+          address2: null,
+          city: 'Ho Chi Minh City',
+          state: 'Ho Chi Minh',
+          postal: '700000',
+          country: 'Vietnam',
+          isDefault: true,
         },
       },
-    });
+    },
+  });
 
+  if (!admin) {
     console.log(`👑 Admin + default address created: ${adminEmail}`);
   } else {
-    console.log('👑 Admin exists, skipping…');
+    console.log('👑 Admin exists or updated.');
   }
   type SeedImage = {
     url: string;
@@ -289,24 +291,19 @@ async function main() {
 
   // 5) Sample customer
   const customerEmail = 'customer@example.com';
-  const customer = await prisma.user.findUnique({
+  const hash2 = await bcrypt.hash('Customer123!', 10);
+  await prisma.user.upsert({
     where: { email: customerEmail },
+    update: {},
+    create: {
+      username: 'customer01',
+      email: customerEmail,
+      passwordHash: hash2,
+      role: UserRole.CUSTOMER,
+      isActive: true,
+    },
   });
-  if (!customer) {
-    const hash = await bcrypt.hash('Customer123!', 10);
-    await prisma.user.create({
-      data: {
-        username: 'customer01',
-        email: customerEmail,
-        passwordHash: hash,
-        role: UserRole.CUSTOMER,
-        isActive: true,
-      },
-    });
-    console.log(`👤 Customer created: ${customerEmail}`);
-  } else {
-    console.log('👤 Customer exists, skipping…');
-  }
+  console.log(`👤 Customer upserted: ${customerEmail}`);
 
   console.log('✅ Seeding complete.');
 }

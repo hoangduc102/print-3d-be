@@ -50,11 +50,13 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
    ```bash
    npm run start:dev
    ```
+
    Swagger nằm tại `http://localhost:3000/api/docs`.
 
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
@@ -62,12 +64,14 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
 - `GET /api/v1/auth/me`
 
 ### Users
+
 - `GET /api/v1/users/profile`
 - `PUT /api/v1/users/profile`
 - `PATCH /api/v1/users/password`
 - `DELETE /api/v1/users/account`
 
 ### Orders
+
 - `POST /order` – tạo đơn hàng (items + payment/shipment tùy chọn)
 - `GET /order` – lọc theo `userId` hoặc `status`
 - `GET /order/:id`
@@ -75,6 +79,7 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
 - `DELETE /order/:id`
 
 ### Order Items
+
 - `POST /order-items` – thêm dòng sản phẩm vào order
 - `GET /order-items?orderId=...`
 - `GET /order-items/:id`
@@ -82,6 +87,7 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
 - `DELETE /order-items/:id`
 
 ### Payments
+
 - `POST /payment` – tạo bản ghi thanh toán cho order
 - `GET /payment` – lọc theo `status`, `method`
 - `GET /payment/:id`
@@ -89,6 +95,7 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
 - `DELETE /payment/:id`
 
 ### Shipments
+
 - `POST /shipment`
 - `GET /shipment` – lọc theo `status`
 - `GET /shipment/:id`
@@ -96,6 +103,7 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
 - `DELETE /shipment/:id`
 
 ### Vouchers
+
 - `POST /vouchers`
 - `GET /vouchers` – tham số `isActive`
 - `GET /vouchers/:id`
@@ -103,6 +111,7 @@ Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. H
 - `DELETE /vouchers/:id`
 
 ### Reviews & Q&A
+
 - `POST /reviews` / `PATCH /reviews/:id` / `DELETE /reviews/:id`
 - `GET /reviews?productId=...`
 - `POST /qnas` / `PATCH /qnas/:id/answer` / `DELETE /qnas/:id`
